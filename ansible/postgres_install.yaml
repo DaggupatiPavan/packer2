@@ -1,0 +1,23 @@
+---
+- name: PostgreSQL installation on cluster nodes
+  hosts: postgres, hammer
+  tasks:
+    - name: update nodes
+      become: true
+      apt:
+        update_cache: yes
+    
+    - name: Install postgresql postgresql-contrib
+      become: true
+      apt:
+        name: "{{ item }}"
+        state: present
+      loop:
+        - postgresql
+        - postgresql-contrib
+
+    - name: Start service
+      become: true
+      service:
+        name: postgresql
+        state: started

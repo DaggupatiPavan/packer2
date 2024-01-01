@@ -1,0 +1,12 @@
+---
+  - name: Install grafana through Docker
+    hosts: postgres, hammer
+    become: true
+    tasks:
+      - name: Install Docker
+        apt:
+          name: docker.io
+          state: present
+      
+      - name: Run nexus image
+        shell: sudo docker run -d --name=grafana -p 3000:3000 grafana/grafana

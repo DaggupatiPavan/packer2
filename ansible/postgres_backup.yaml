@@ -1,0 +1,35 @@
+---
+- name: Backup DB
+  hosts: postgres
+  become: true
+  tasks:
+    - name: source .bash_profile
+      command:
+        cmd: 'su - postgres -c "source /var/lib/postgresql/.bash_profile"'
+
+    - name: Stop db
+      command:
+        cmd: 'su - postgres -c "pg_ctl -D $PGDATA stop"'
+      register: stop_db_status
+      ignore_errors: yes
+
+    - name: Display status
+      become_user: postgres
+      debug:
+        var: stop_db_status
+
+    - name: Copy move and link files
+      shell: |
+          cp -R /var/lib/postgresql/14/main /var/lib/postgresql/14/backups
+          mv /var/lib/postgresql/14/main/pg_wal /var/lib/postgresql/14/log
+          ln -s /var/lib/postgresql/14/log/pg_wal /var/lib/postgresql/14/main/pg_wal
+      
+    - name: start db
+      command:
+        cmd: 'su - postgres -c "pg_ctl -D $PGDATA start"'
+      register: start_dbs_status
+
+    - name: Display status
+      become_user: postgres
+      debug:
+       var: start_dbs_status

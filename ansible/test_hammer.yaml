@@ -1,0 +1,50 @@
+---
+- name: Config HammerDB
+  hosts: hammer
+  become: true
+  vars:
+    postgres_ip: "{{ postgres_ip }}"
+  tasks:
+    - name: Write file contents
+      copy:
+        content: |
+            dbset db pg
+            dbset bm tpc-c
+            diset connection pg_host {{ postgres_ip }}
+            diset tpcc pg_count_ware 20
+            diset tpcc pg_superuserpass admin
+            diset tpcc pg_total_iterations 10000000
+            diset tpcc pg_rampup 5
+            diset tpcc pg_duration 15
+            diset tpcc pg_driver timed
+            loadscript
+            vuset vu 1
+            vuset vu logtotemp 1
+            vucreate
+            vurun
+        dest: HammerDB-4.1/hammerdb_arguments_test.tcl
+
+    - name: Run test commands
+      shell:
+        cmd: ./hammerdbcli auto hammerdb_arguments_test.tcl
+        chdir: HammerDB-4.1
+      register: test_op
+
+    - name: Write destroy content 
+      copy:
+        content: vudestroy
+        dest: HammerDB-4.1/hammerdb_arguments_test_destory.tcl
+
+    # - name: Run destroy
+    #   shell:
+    #     cmd: ./hammerdbcli auto hammerdb_arguments_test_destory.tcl
+    #     chdir: HammerDB-4.1
+    #   register: destroy_op
+
+    # - name: Display destroy op
+    #   debug:
+    #     var: destroy_op
+
+    - name: Display test results
+      debug:
+        var: test_op

@@ -1,0 +1,10 @@
+---
+- name: Install hammerDb
+  hosts: postgres, hammer
+  become: true
+  tasks:
+    - name: Download HammerDB 4.1
+      shell: sudo wget https://github.com/TPC-Council/HammerDB/releases/download/v4.1/HammerDB-4.1-Linux.tar.gz
+
+    - name: Untar Hammer Package
+      shell: tar xzvf HammerDB-4.1-Linux.tar.gz

@@ -1,0 +1,94 @@
+---
+- name: Postgres DB Config
+  hosts: postgres
+  become: true
+  vars:
+    postgres_ip: "{{ postgres_ip }}"
+    hammer_ip: "{{ hammer_ip }}"
+  tasks:
+    - name: Create directory
+      file:
+        path: "{{ item }}"
+        state: directory
+      loop:
+        - /var/lib/postgresql/14/log
+        - /var/lib/postgresql/14/backups
+
+    - name: give permissions
+      file:
+        path: "{{ item }}"
+        owner: postgres
+        group: postgres
+        recurse: yes
+      loop:
+       - /var/lib/postgresql
+       - /var/tmp/
+
+    - name: Insert enivronment variables
+      copy:
+        content: |
+            PGDATA=/var/lib/postgresql/14/main
+            export PGDATA
+            PATH=$PATH:$HOME:/usr/bin:/usr/local/bin:/usr/lib/postgresql/14/bin
+            export PATH
+            LD_LIBRARY_PATH=/usr/lib/postgresql/14/lib
+            export LD_LIBRARY_PATH
+        dest: /var/lib/postgresql/.bash_profile
+
+    - name: source .bash_profile
+      command:
+        cmd: 'su - postgres -c "source /var/lib/postgresql/.bash_profile"'
+
+    - name: Remove old files
+      shell: rm -rf /var/lib/postgresql/14/main/*
+
+    - name: Wait for 30 seconds
+      pause:
+        seconds: 30
+
+    - name: init DB
+      command:
+        cmd: 'su - postgres -c "initdb -D $PGDATA"'
+      register: init_db_status
+
+    - name: Display status
+      debug:
+        var: init_db_status.stdout_lines
+
+    - name: Insert to /etc/sysctl.conf file
+      lineinfile:
+        line: "vm.nr_hugepages = 10"
+        dest: /etc/sysctl.conf
+        insertafter: EOF
+
+    # - name: Reboot machine
+    #   shell: reboot
+    #   async: 0
+    #   poll: 0
+
+    # - name: Wait for host to reboot
+    #   wait_for_connection:
+    #     timeout: 300
+
+    - name: Edit pg_hba.conf file in $PGDATA
+      lineinfile:
+        line: "host    all             all             {{ hammer_ip }}/32            trust"
+        dest: /var/lib/postgresql/14/main/pg_hba.conf
+        insertafter: host    all             all             127.0.0.1/32            trust
+
+    - name: Edit postgres.conf
+      lineinfile:
+        line: |
+          listen_addresses= '{{ postgres_ip }}'
+           port = 5432 
+        dest: /var/lib/postgresql/14/main/postgresql.conf
+        insertafter: '#port = 5432                            # (change requires restart)'
+
+    - name: Start DB
+      command:
+        cmd: 'su - postgres -c "pg_ctl -D $PGDATA start"'
+      register: start_db_status
+
+    - name: Display status
+      debug:
+        var: start_db_status.stdout_lines

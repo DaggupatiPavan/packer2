@@ -1,0 +1,147 @@
+---
+  - name: Install Prometheus on cluster nodes
+    hosts: postgres, hammer
+    tasks:
+      - name: update nodes
+        become: true
+        apt:
+          update_cache: yes
+
+      - name: Create system group
+        become: true
+        group:
+          name: prometheus 
+          state: present
+          system: yes
+
+      - name: Create a system user and add it to prometheus group
+        become: true
+        user:
+          name: prometheus
+          shell: /sbin/nologin
+          system: yes
+          group: prometheus
+
+      - name: Create directories for prometheus
+        become: true
+        file:
+          path: "{{ item }}"
+          state: directory
+        loop:
+          - /etc/prometheus
+          - /var/lib/prometheus
+        
+      - name: Download Prometheus
+        shell: wget https://github.com/prometheus/prometheus/releases/download/v2.43.0/prometheus-2.43.0.linux-amd64.tar.gz
+
+      - name: Extract files
+        shell: tar vxf prometheus*.tar.gz
+
+      - name: Navigate to the Prometheus Directory
+        shell:
+          cmd: cd prometheus-2.43.0.linux-amd64
+        args:
+          executable: /bin/bash
+      - name: Move the Binary Files & Set Owner1
+        shell: 
+           cmd: sudo mv prometheus-2.43.0.linux-amd64/prometheus /usr/local/bin
+        args:
+            executable: /bin/bash 
+      - name: Move the Binary Files & Set Owner2
+        shell: sudo mv prometheus-2.43.0.linux-amd64/promtool /usr/local/bin
+      - name: Move the Binary Files & Set Owner3
+        shell: sudo chown prometheus:prometheus /usr/local/bin/prometheus
+      - name: Move the Binary Files & Set Owner4
+        shell: sudo chown prometheus:prometheus /usr/local/bin/promtool
+
+      - name: Move the Configuration Files & Set Owner
+        shell: |
+            sudo mv consoles /etc/prometheus
+            sudo mv console_libraries /etc/prometheus
+            sudo mv prometheus.yml /etc/prometheus
+            sudo chown prometheus:prometheus /etc/prometheus
+            sudo chown -R prometheus:prometheus /etc/prometheus/consoles
+            sudo chown -R prometheus:prometheus /etc/prometheus/console_libraries
+            sudo chown -R prometheus:prometheus /var/lib/prometheus
+
+      - name: Create Prometheus Systemd Service
+        become: true
+        file:
+          path: /etc/systemd/system/prometheus.service
+          state: touch
+
+      - name: copy content to prometheus file
+        become: true
+        copy:
+          content: |
+            # my global config
+            global:
+              scrape_interval: 15s # Set the scrape interval to every 15 seconds. Default is every 1 minute.
+              evaluation_interval: 15s # Evaluate rules every 15 seconds. The default is every 1 minute.
+              # scrape_timeout is set to the global default (10s).
+
+            # Alertmanager configuration
+            alerting:
+              alertmanagers:
+                - static_configs:
+                    - targets:
+                      # - alertmanager:9093
+
+            # Load rules once and periodically evaluate them according to the global 'evaluation_interval'.
+            rule_files:
+              # - "first_rules.yml"
+              # - "second_rules.yml"
+
+            # A scrape configuration containing exactly one endpoint to scrape:
+            # Here it's Prometheus itself.
+            scrape_configs:
+              # The job name is added as a label `job=<job_name>` to any timeseries scraped from this config.
+              - job_name: "prometheus"
+
+                # metrics_path defaults to '/metrics'
+                # scheme defaults to 'http'.
+          dest: /etc/prometheus/prometheus.yml
+
+      - name: Copy contents to service file
+        become: true
+        copy:
+          content: |
+            [Unit]
+            Description=Prometheus
+            Wants=network-online.target
+            After=network-online.target
+
+            [Service]
+            User=prometheus
+            Group=prometheus
+            Type=simple
+            ExecStart=/usr/local/bin/prometheus \
+                --config.file /etc/prometheus/prometheus.yml \
+                --storage.tsdb.path /var/lib/prometheus/ \
+                --web.console.templates=/etc/prometheus/consoles \
+                --web.console.libraries=/etc/prometheus/console_libraries
+
+            [Install]
+            WantedBy=multi-user.target
+          dest: /etc/systemd/system/prometheus.service
+
+      - name: Restart Systemd
+        become: true
+        systemd:
+          daemon-reload: yes
+
+      - name: Start Prometheus Service
+        become: true
+        systemd:
+          name: prometheus
+          enabled: yes
+          state: started
+
+      - name: Check Prometheus Status
+        become: true
+        shell: sudo systemctl status prometheus
+        register: output
+
+      - name: Display status
+        debug:
+          var: output.stdout_lines

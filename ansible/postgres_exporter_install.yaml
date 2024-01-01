@@ -1,0 +1,103 @@
+---
+- name: Install Postgres Exporter
+  hosts: postgres, hammer
+  become: true
+  vars:
+    postgres_ip: "{{ postgres_ip }}"
+  tasks:
+    - name: Create directory postgres_exporter
+      file:
+        path: /opt/postgres_exporter
+        state: directory
+
+    - name: Download packages
+      get_url:
+        url: https://github.com/wrouesnel/postgres_exporter/releases/download/v0.5.1/postgres_exporter_v0.5.1_linux-amd64.tar.gz
+        dest: /opt/postgres_exporter
+
+    - name: Extract files
+      unarchive:
+        src: "/opt/postgres_exporter/postgres_exporter_v0.5.1_linux-amd64.tar.gz"
+        dest: "/opt/postgres_exporter/"
+        remote_src: yes
+
+    - name: Copy files
+      copy:
+        src: "/opt/postgres_exporter/postgres_exporter_v0.5.1_linux-amd64/postgres_exporter"
+        dest: "/usr/local/bin"
+        mode: 'a+x'
+        remote_src: yes
+
+    - name: Set private IP address fact
+      set_fact:
+        ip_address: "{{ ansible_default_ipv4.address }}"
+        ip_address_type: "private"
+
+    - name: Display IP address type
+      debug:
+        var: ip_address
+
+    - name: Copy contents
+      copy:
+        content: |
+          DATA_SOURCE_NAME="postgresql://postgres:postgres@{{ ip_address }}:5432/?sslmode=disable"
+        dest: "/opt/postgres_exporter/postgres_exporter.env"
+        remote_src: yes
+
+    - name: Insert service file contents
+      copy:
+        content: |
+            [Unit]
+            Description=Prometheus exporter for Postgresql
+            Wants=network-online.target
+            After=network-online.target
+            [Service]
+            User=postgres
+            Group=postgres
+            WorkingDirectory=/opt/postgres_exporter
+            EnvironmentFile=/opt/postgres_exporter/postgres_exporter.env
+            ExecStart=/usr/local/bin/postgres_exporter --web.listen-address=:9187 --web.telemetry-path=/metrics
+            Restart=always
+            [Install]
+            WantedBy=multi-user.target
+        dest: /etc/systemd/system/postgres_exporter.service
+        remote_src: yes
+
+    - name: Daemon-reload
+      systemd:
+        daemon-reload: yes
+
+    - name: Enable and start service
+      systemd:
+        name: postgres_exporter
+        state: started
+        enabled: yes
+
+    - name: Get PostgreSQL Exporter service status
+      shell: systemctl status postgres_exporter.service
+      register: service_status
+
+    - name: Display PostgreSQL Exporter service status
+      debug:
+        var: service_status.stdout_lines
+
+    - name: Insert configuration to prometheus
+      lineinfile:
+        path: /etc/prometheus/prometheus.yml
+        insertafter: '^scrape_configs:'
+        line: "{{ lookup('template', 'template.yml.j2') }}"
+
+
+    - name: Restart prometheus
+      systemd:
+        name: prometheus
+        state: restarted
+
+    - name: Get Promtheus status
+      shell: systemctl status prometheus.service
+      register: prometheus_status
+
+    - name: Display prometheus status
+      debug:
+        var: prometheus_status.stdout_lines
+

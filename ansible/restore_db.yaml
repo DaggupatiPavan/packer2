@@ -1,0 +1,40 @@
+---
+- name: Restore DB
+  hosts: postgres
+  become: true
+  tasks:
+    - name: stop DB
+      become_user: postgres
+      shell: pg_ctl -D $PGDATA stop
+      register: restore_stop_db_status
+    
+    - name: Display status
+      debug:
+        var: restore_stop_db_status
+
+    - name: Delete, copy, move and link files
+      become_user: postgres
+      shell: |
+          rm -rf $PGDATA/*
+          rm -rf /var/lib/postgresql/14/log/*
+          cp -R /var/lib/postgresql/14/backups/main/* $PGDATA/
+          mv $PGDATA/pg_wal /var/lib/postgresql/14/log
+          ln -s /var/lib/postgresql/14/log/pg_wal $PGDATA/pg_wal
+
+    - name: Reboot machine
+      shell: reboot
+      async: 0
+      poll: 0
+
+    - name: Wait for host to reboot
+      wait_for_connection:
+        timeout: 300
+
+    - name: Start DB
+      become_user: postgres
+      shell: pg_ctl -D $PGDATA start
+      register: restore_start_db_status
+
+    - name: Display status
+      debug:  
+        var: restore_start_db_status
